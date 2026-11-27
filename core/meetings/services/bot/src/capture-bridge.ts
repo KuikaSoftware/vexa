@@ -46,6 +46,7 @@ import type { BotRecordingSink } from './recording.js';
 import type { TelemetrySink } from './ports.js';
 import type { RemoteAudioActivityTap } from './aloneness.js';
 import { createTtsPlayback } from './tts-playback.js';
+import { sequential } from './sequential.js';
 import { writeBackSession } from './session-writeback.js';
 import { restoreSession } from './session-restore.js';
 import { guardMeetingNavigation, meetingNavigationPolicy, pinMeetingHostArgs, type NavigationGuard } from './meeting-navigation.js';
@@ -1538,14 +1539,16 @@ export function createSpeakController(page: Page, inv: Invocation): SpeakControl
   };
 
   return {
-    async speak(text: string, voice?: string): Promise<void> {
+    // One speak at a time: two acts arriving together used to play their PCM over each other
+    // on tts_sink (and, in toggle mode, flip the meeting mic twice).
+    speak: sequential(async (text: string, voice?: string): Promise<void> => {
       if (!enabled) { console.error('[bot] speak ignored: voiceAgentEnabled is false'); return; }
       console.log(`[bot] speak: "${text.slice(0, 60)}"`);
       if (toggleMic) await setMic(true);                      // (a) unmute the meeting-UI mic button
       // (b) synthesize via the TTS service + stream PCM to tts_sink → virtual_mic (the bot's mic).
       await tts.speak(text, voice).catch((e) => console.error(`[bot] speak: tts failed: ${String(e)}`));
       if (toggleMic) await setMic(false);                     // (c) re-mute after the tail
-    },
+    }),
     async stop(): Promise<void> {
       if (!enabled) return;
       tts.stop();                                             // barge-in: kill playback + re-mute tts_sink
