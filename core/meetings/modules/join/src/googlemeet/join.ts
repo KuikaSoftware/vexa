@@ -4,6 +4,7 @@ import { micMode } from "../shared/mic-mode";
 import { BotConfig } from "../_host";
 import {
   googleNameInputSelectors,
+  googleGuestChoiceSelectors,
   googleJoinButtonSelectors,
   googleMicrophoneButtonSelectors,
   googleCameraButtonSelectors,
@@ -465,6 +466,20 @@ export async function joinGoogleMeeting(
   } else {
     // Anonymous flow: enter bot name and ask to join
     log("Attempting to find name input field...");
+
+    // A guest choice may come first; whichever of the two shows first decides, and the refusal
+    // guard keeps a refused knock from waiting here.
+    const firstStep = await waitForAnySelector(
+      page,
+      [...googleGuestChoiceSelectors, ...googleNameInputSelectors],
+      120000,
+      "guest choice or name input",
+      refused("lobby, name input")
+    );
+    if (googleGuestChoiceSelectors.includes(firstStep.selector)) {
+      await clickHandle(firstStep.handle, "continue_as_guest");
+      log("Clicked 'Continue as guest'.");
+    }
 
     const { handle: nameHandle, selector: nameFieldSelector } = await waitForAnySelector(
       page,

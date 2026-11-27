@@ -384,6 +384,14 @@ export const googleMicrophoneButtonSelectors: string[] = [
   'button[aria-label*="Turn on microphone"]'
 ];
 
+// "Continue as guest": Meet may offer a signed-out browser a sign-in-or-guest choice before the
+// guest lobby, and the name input only appears after it is taken (seen 26-27 Nov 2026). English
+// only: the bot pins the lobby's UI locale to en (withPinnedMeetLocale).
+export const googleGuestChoiceSelectors: string[] = [
+  'button:has-text("Continue as guest")',
+  '[role="button"]:has-text("Continue as guest")',
+];
+
 // Name input — locale-agnostic FIRST. `aria-label="Your name"` is English-only,
 // so the non-English lobby (Hungarian: "A neved") never matched and the bot
 // could not fill its name. The lobby has exactly one editable text input, so
