@@ -5,7 +5,8 @@
  * is the audio half: synthesize `text` via the Vexa TTS service and play the returned PCM through
  * the container's PulseAudio `tts_sink` (→ `virtual_mic`, which Chromium captures as its mic). The
  * `tts_sink → virtual_mic` graph is created by entrypoint.sh; here we only unmute it during
- * playback, stream PCM to `paplay`, and re-mute after.
+ * playback, stream PCM to `paplay`, and re-mute after. With `muteBetweenSpeaks: false`
+ * (VEXA_MIC_MODE=open) the graph is never muted: it carries silence between speaks.
  *
  * Ported (focused: the streaming-PCM path only — no ffmpeg) from the production bot
  *   services/vexa-bot/core/src/services/tts-playback.ts (synthesizeViaTtsService + (un)mute).
@@ -40,16 +41,25 @@ export interface TtsPlayback {
   stop(): void;
 }
 
+export interface TtsPlaybackOptions {
+  /** Mute tts_sink/virtual_mic between speaks (the default). False keeps the mic path open. */
+  muteBetweenSpeaks?: boolean;
+}
+
 /** Build a TtsPlayback that streams the TTS service's PCM straight to paplay. */
-export function createTtsPlayback(log: (m: string) => void = () => { /* */ }): TtsPlayback {
+export function createTtsPlayback(
+  log: (m: string) => void = () => { /* */ },
+  { muteBetweenSpeaks = true }: TtsPlaybackOptions = {},
+): TtsPlayback {
   let proc: ChildProcess | null = null;
+  const setMute = (muted: boolean): void => { if (muteBetweenSpeaks) setTtsMute(muted, log); };
 
   const stop = (): void => {
     if (proc) {
       try { proc.stdin?.destroy(); proc.kill('SIGKILL'); } catch { /* */ }
       proc = null;
     }
-    setTtsMute(true, log);
+    setMute(true);
   };
 
   const speak = async (text: string, voice = 'auto'): Promise<void> => {
@@ -79,11 +89,11 @@ export function createTtsPlayback(log: (m: string) => void = () => { /* */ }): T
           res.on('end', () => { log(`[tts] service ${res.statusCode}: ${body.slice(0, 120)}`); resolve(); });
           return;
         }
-        setTtsMute(false, log);                       // open the mic only during playback
+        setMute(false);                               // open the mic only during playback
         const p = spawn('paplay', PAPLAY_ARGS, { stdio: ['pipe', 'pipe', 'pipe'] });
         proc = p;
         p.stderr?.on('data', (d: Buffer) => log(`[tts] paplay: ${d.toString().trim()}`));
-        const done = () => { if (proc === p) proc = null; setTtsMute(true, log); resolve(); };
+        const done = () => { if (proc === p) proc = null; setMute(true); resolve(); };
         p.on('exit', done);
         p.on('error', (e) => { log(`[tts] paplay error: ${String(e)}`); done(); });
         res.pipe(p.stdin!);                           // stream PCM straight to the mic sink

@@ -35,9 +35,10 @@ import {
   UiLocaleMismatchError, checkUiLocale, uiLocaleMismatchOf, type UiLocaleReading,
 } from "./shared/ui-locale";
 import { redactMeetingUrl } from "./shared/url-redaction";
+import { micMode, type MicMode } from "./shared/mic-mode";
 
-export type { BotConfig, Hooks, JoinState };
-export { startDebugView, setHooks };
+export type { BotConfig, Hooks, JoinState, MicMode };
+export { startDebugView, setHooks, micMode };
 // Canonical browser launch args — the vexa-bot service and the debug harness both
 // build on this ONE set (browser-args.ts), so join↔bot flags never drift.
 export { JOIN_BROWSER_ARGS, getJoinBrowserArgs };

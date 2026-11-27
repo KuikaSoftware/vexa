@@ -1,5 +1,6 @@
 import { Page, ElementHandle } from "playwright";
 import { log, randomDelay, callJoiningCallback } from "../_host";
+import { micMode } from "../shared/mic-mode";
 import { BotConfig } from "../_host";
 import {
   googleNameInputSelectors,
@@ -412,11 +413,13 @@ export async function joinGoogleMeeting(
     log("📸 Diagnostic screenshot: auth lobby state");
 
     // Mute mic and camera if visible
-    try {
-      const micHandle = await page.waitForSelector(googleMicrophoneButtonSelectors[0], { timeout: 3000 });
-      if (micHandle) { await clickHandle(micHandle, "microphone"); log("Microphone muted."); }
-    } catch (e) {
-      log("Microphone already muted or not found.");
+    if (micMode() === "toggle") {
+      try {
+        const micHandle = await page.waitForSelector(googleMicrophoneButtonSelectors[0], { timeout: 3000 });
+        if (micHandle) { await clickHandle(micHandle, "microphone"); log("Microphone muted."); }
+      } catch (e) {
+        log("Microphone already muted or not found.");
+      }
     }
 
     try {
@@ -477,11 +480,13 @@ export async function joinGoogleMeeting(
     await fillField(nameHandle!, nameFieldSelector, botName, "name");
 
     // Mute mic and camera if available
-    try {
-      const micHandle = await page.waitForSelector(googleMicrophoneButtonSelectors[0], { timeout: 1000 });
-      if (micHandle) await clickHandle(micHandle, "microphone");
-    } catch (e) {
-      log("Microphone already muted or not found.");
+    if (micMode() === "toggle") {
+      try {
+        const micHandle = await page.waitForSelector(googleMicrophoneButtonSelectors[0], { timeout: 1000 });
+        if (micHandle) await clickHandle(micHandle, "microphone");
+      } catch (e) {
+        log("Microphone already muted or not found.");
+      }
     }
 
     try {

@@ -1,5 +1,6 @@
 import { Page } from "playwright";
 import { log, callJoiningCallback } from "../_host";
+import { micMode } from "../shared/mic-mode";
 import { BotConfig } from "../_host";
 import {
   teamsContinueButtonSelectors,
@@ -405,13 +406,17 @@ export async function joinMicrosoftTeams(
 
   // Mute mic for all bots after join. TTS bots unmute only when speaking
   // (handleSpeakCommand unmutes → speaks → re-mutes).
-  log("Step 6b: Muting mic...");
-  try {
-    await page.keyboard.press("Control+Shift+M");
-    await page.waitForTimeout(200);
-    log("✅ Mic muted via Ctrl+Shift+M");
-  } catch (error) {
-    log("ℹ️ Could not mute mic via keyboard shortcut");
+  if (micMode() === "open") {
+    log("Step 6b: Mic stays on (VEXA_MIC_MODE=open)");
+  } else {
+    log("Step 6b: Muting mic...");
+    try {
+      await page.keyboard.press("Control+Shift+M");
+      await page.waitForTimeout(200);
+      log("✅ Mic muted via Ctrl+Shift+M");
+    } catch (error) {
+      log("ℹ️ Could not mute mic via keyboard shortcut");
+    }
   }
 
   log("Step 7: Checking current state...");

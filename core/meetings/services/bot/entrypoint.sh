@@ -32,8 +32,16 @@ pactl load-module module-null-sink sink_name=tts_sink \
 pactl load-module module-remap-source master=tts_sink.monitor source_name=virtual_mic \
   source_properties=device.description="VirtualMicrophone" 2>/dev/null || true
 pactl set-default-source virtual_mic 2>/dev/null || true
-pactl set-sink-mute tts_sink 1 2>/dev/null || true
-pactl set-source-mute virtual_mic 1 2>/dev/null || true
+if [ "${VEXA_MIC_MODE:-toggle}" = "open" ]; then
+  # Open mic (VEXA_MIC_MODE=open, join/src/shared/mic-mode.ts): the mic path is never muted, and the
+  # browser plays the meeting into a sink of its own, so meeting audio cannot loop back into the mic.
+  pactl load-module module-null-sink sink_name=meeting_out \
+    sink_properties=device.description="MeetingOut" 2>/dev/null || true
+  pactl set-default-sink meeting_out 2>/dev/null || true
+else
+  pactl set-sink-mute tts_sink 1 2>/dev/null || true
+  pactl set-source-mute virtual_mic 1 2>/dev/null || true
+fi
 
 # CORPORATE TLS INSPECTION (chart global.extraCA → VEXA_EXTRA_CA_FILE): Chromium on Linux trusts
 # only its NSS store, never SSL_CERT_FILE, so a page re-signed by the operator's root CA fails with

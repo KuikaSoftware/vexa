@@ -38,7 +38,7 @@ import {
   type Page,
   type BrowserContext,
 } from '@vexa/remote-browser';
-import { getJoinBrowserArgs } from '@vexa/join';
+import { getJoinBrowserArgs, micMode } from '@vexa/join';
 import type { RecordingMasterFormat } from '@vexa/recording';
 import { isMixedLanePlatform, isPerTrackLanePlatform, type Invocation } from './config.js';
 import type { BotPipeline } from './pipeline.js';
@@ -1512,7 +1512,9 @@ export interface SpeakController {
 export function createSpeakController(page: Page, inv: Invocation): SpeakController {
   const enabled = !!inv.voiceAgentEnabled;
   const platform = inv.platform;
-  const tts = createTtsPlayback((m) => console.log(`[bot] ${m}`));   // OS-level TTS→tts_sink half
+  // VEXA_MIC_MODE=open: the mic path stays live and the meeting mic is never clicked (mic-mode.ts).
+  const toggleMic = micMode() === 'toggle';
+  const tts = createTtsPlayback((m) => console.log(`[bot] ${m}`), { muteBetweenSpeaks: toggleMic });
 
   // Toggle the meeting-UI mic button so the bot is audible only while speaking (production
   // unmutes before speech + auto-mutes after — index.ts:1039–1059). The PulseAudio source
@@ -1539,15 +1541,15 @@ export function createSpeakController(page: Page, inv: Invocation): SpeakControl
     async speak(text: string, voice?: string): Promise<void> {
       if (!enabled) { console.error('[bot] speak ignored: voiceAgentEnabled is false'); return; }
       console.log(`[bot] speak: "${text.slice(0, 60)}"`);
-      await setMic(true);                                     // (a) unmute the meeting-UI mic button
+      if (toggleMic) await setMic(true);                      // (a) unmute the meeting-UI mic button
       // (b) synthesize via the TTS service + stream PCM to tts_sink → virtual_mic (the bot's mic).
       await tts.speak(text, voice).catch((e) => console.error(`[bot] speak: tts failed: ${String(e)}`));
-      await setMic(false);                                    // (c) re-mute after the tail
+      if (toggleMic) await setMic(false);                     // (c) re-mute after the tail
     },
     async stop(): Promise<void> {
       if (!enabled) return;
       tts.stop();                                             // barge-in: kill playback + re-mute tts_sink
-      await setMic(false);
+      if (toggleMic) await setMic(false);
       console.log('[bot] speak_stop');
     },
   };

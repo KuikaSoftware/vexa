@@ -12,7 +12,7 @@
  * Needs bash + node on PATH (the image has both). Run: npx tsx src/entrypoint.test.ts
  */
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,22 +26,27 @@ const check = (name: string, cond: boolean, detail = '') => {
   if (!cond) failed++;
 };
 
-/** Stub the X11/audio bringup (Xvfb, fluxbox, pulseaudio, pactl) as no-ops on PATH. */
+/** Stub the X11/audio bringup (Xvfb, fluxbox, pulseaudio, pactl) as no-ops on PATH; pactl records
+ *  each call's arguments in <root>/pactl.log. */
 function makeStubBin(root: string): string {
   const bin = join(root, 'bin');
   mkdirSync(bin, { recursive: true });
   for (const name of ['Xvfb', 'fluxbox', 'pulseaudio', 'pactl']) {
     const p = join(bin, name);
-    writeFileSync(p, '#!/bin/sh\nexit 0\n');
+    const record = name === 'pactl' ? `echo "$*" >> '${join(root, 'pactl.log')}'\n` : '';
+    writeFileSync(p, `#!/bin/sh\n${record}exit 0\n`);
     chmodSync(p, 0o755);
   }
   return bin;
 }
 
-interface RunResult { code: number | null; stdout: string; }
+interface RunResult { code: number | null; stdout: string; pactl: string; }
 
 /** Run the real entrypoint.sh with a stub worker; optionally SIGTERM the LEADER (docker-style). */
-function runEntrypoint(workerJs: string, opts: { sigtermAfterMs?: number } = {}): Promise<RunResult> {
+function runEntrypoint(
+  workerJs: string,
+  opts: { sigtermAfterMs?: number; env?: Record<string, string> } = {},
+): Promise<RunResult> {
   const root = mkdtempSync(join(tmpdir(), 'bot-entrypoint-'));
   const bin = makeStubBin(root);
   const appDir = join(root, 'app');
@@ -55,6 +60,7 @@ function runEntrypoint(workerJs: string, opts: { sigtermAfterMs?: number } = {})
       BOT_APP_DIR: appDir,
       BOT_WORKER_ENTRY: 'worker.cjs',
       DISPLAY: ':99',
+      ...opts.env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true, // its own process group — SIGTERM hits ONLY the leader, like docker's PID 1
@@ -80,8 +86,10 @@ function runEntrypoint(workerJs: string, opts: { sigtermAfterMs?: number } = {})
 
   return new Promise((resolve) => {
     child.on('exit', (code) => {
+      const pactlLog = join(root, 'pactl.log');
+      const pactl = existsSync(pactlLog) ? readFileSync(pactlLog, 'utf8') : '';
       rmSync(root, { recursive: true, force: true });
-      resolve({ code, stdout });
+      resolve({ code, stdout, pactl });
     });
   });
 }
@@ -111,6 +119,18 @@ const main = async () => {
     const r = await runEntrypoint(PLAIN_EXIT_WORKER);
     check('a normal worker exit propagates its code unchanged', r.code === 7, `exit=${r.code}`);
     check('exit breadcrumb carries the code', r.stdout.includes('worker exited with code 7'), r.stdout.slice(-400));
+  }
+  {
+    const r = await runEntrypoint(PLAIN_EXIT_WORKER);
+    check('default mic mode mutes the mic path between speaks',
+      r.pactl.includes('set-sink-mute tts_sink 1') && r.pactl.includes('set-source-mute virtual_mic 1'), r.pactl);
+    check('default mic mode keeps the browser on the default sink', !r.pactl.includes('meeting_out'), r.pactl);
+  }
+  {
+    const r = await runEntrypoint(PLAIN_EXIT_WORKER, { env: { VEXA_MIC_MODE: 'open' } });
+    check('VEXA_MIC_MODE=open never mutes the mic path', !/set-(sink|source)-mute/.test(r.pactl), r.pactl);
+    check('VEXA_MIC_MODE=open plays the meeting into its own sink',
+      r.pactl.includes('sink_name=meeting_out') && r.pactl.includes('set-default-sink meeting_out'), r.pactl);
   }
 };
 
