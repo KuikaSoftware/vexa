@@ -39,6 +39,7 @@ import {
   type BrowserContext,
 } from '@vexa/remote-browser';
 import { getJoinBrowserArgs, micMode } from '@vexa/join';
+import { avatarCameraScript, resolveAvatar, wantsAvatarCamera } from './avatar-camera.js';
 import type { RecordingMasterFormat } from '@vexa/recording';
 import { isMixedLanePlatform, isPerTrackLanePlatform, type Invocation } from './config.js';
 import type { BotPipeline } from './pipeline.js';
@@ -677,6 +678,16 @@ export async function launchBrowser(inv: Invocation): Promise<BrowserSession> {
       report('error: ' + msg);
     });
   })();`).catch(() => { /* never fatal at launch */ });
+
+  // The invocation's picture as the bot's camera (avatar-camera.ts). Before the first navigation, so
+  // the page's first getUserMedia already gets it; the join flow then turns the camera on.
+  if (wantsAvatarCamera(inv)) {
+    const src = await resolveAvatar(inv.defaultAvatarUrl!);
+    if (src) {
+      await context.addInitScript(avatarCameraScript(src)).catch((e) => console.error(`[bot] avatar camera not installed: ${String(e)}`));
+      console.log('[bot] avatar camera installed');
+    }
+  }
 
   // Zoom/Teams expose NO per-participant <audio> in the DOM — install the WebRTC hook so each
   // remote audio track is mirrored into a hidden <audio> element (→ __vexaCapturedRemoteAudioStreams)

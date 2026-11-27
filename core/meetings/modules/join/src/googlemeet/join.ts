@@ -319,6 +319,34 @@ export function withPinnedMeetLocale(meetingUrl: string, locale: string): string
   }
 }
 
+/**
+ * The lobby's camera: off, unless the embedder gave the page a camera of its own
+ * (`window.__vexaCameraSource`, set by the bot's avatar camera before the page loads), which is
+ * then turned on so the bot shows its picture.
+ */
+async function setLobbyCamera(
+  page: Page,
+  clickHandle: (handle: ElementHandle<Element>, label: string) => Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  const own = await page.evaluate(() => !!(window as any).__vexaCameraSource).catch(() => false);
+  if (own) {
+    try {
+      const on = await page.waitForSelector('button[aria-label*="Turn on camera"]', { timeout: timeoutMs });
+      if (on) { await clickHandle(on, "camera"); log("Camera turned on (the bot's own camera)."); }
+    } catch (e) {
+      log("Camera already on or not found.");
+    }
+    return;
+  }
+  try {
+    const cameraHandle = await page.waitForSelector(googleCameraButtonSelectors[0], { timeout: timeoutMs });
+    if (cameraHandle) { await clickHandle(cameraHandle, "camera"); log("Camera turned off."); }
+  } catch (e) {
+    log("Camera already off or not found.");
+  }
+}
+
 export async function joinGoogleMeeting(
   page: Page,
   meetingUrl: string,
@@ -423,12 +451,7 @@ export async function joinGoogleMeeting(
       }
     }
 
-    try {
-      const cameraHandle = await page.waitForSelector(googleCameraButtonSelectors[0], { timeout: 3000 });
-      if (cameraHandle) { await clickHandle(cameraHandle, "camera"); log("Camera turned off."); }
-    } catch (e) {
-      log("Camera already off or not found.");
-    }
+    await setLobbyCamera(page, clickHandle, 3000);
 
     // Authenticated lobby: one primary CTA — "Join now" (standard join),
     // "Switch here" (same account already in the call) or "Ask to join"
@@ -504,12 +527,7 @@ export async function joinGoogleMeeting(
       }
     }
 
-    try {
-      const cameraHandle = await page.waitForSelector(googleCameraButtonSelectors[0], { timeout: 1000 });
-      if (cameraHandle) await clickHandle(cameraHandle, "camera");
-    } catch (e) {
-      log("Camera already off or not found.");
-    }
+    await setLobbyCamera(page, clickHandle, 1000);
 
     const { handle: joinHandle } = await waitForLobbyCta(
       page,
